@@ -19,6 +19,9 @@ from reportlab.lib.styles import getSampleStyleSheet
 import pandas as pd
 import io
 from email.mime.application import MIMEApplication
+from dotenv import load_dotenv
+load_dotenv()
+
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'  # Replace with secure key in production
@@ -27,7 +30,7 @@ app.secret_key = 'your-secret-key'  # Replace with secure key in production
 MYSQL_CONFIG = {
     'host': 'localhost',
     'user': 'root',  # Replace with your MySQL username
-    'password': '',  # Replace with your MySQL password
+    'password': 'aswin2772',  # Replace with your MySQL password
     'database': 'quiz_db', # Use pure Python implementation for compatibility
 }
 
@@ -681,14 +684,14 @@ def show_subjects():
             questions = c.fetchall()
 
             # Send emails
-            sender_email = "deptcs.aam@gmail.com"
-            sender_password = "vyahaexrckifhirn"
+            sender_email = os.getenv("SENDER_EMAIL")
+            sender_password = os.getenv("BREVO_SMTP_KEY")
             subject_line = f"Quiz Results Released for {subject['subject_name']}"
 
             try:
-                with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                with smtplib.SMTP(os.getenv("BREVO_HOST"), int(os.getenv("BREVO_PORT"))) as server:
                     server.starttls()
-                    server.login(sender_email, sender_password)
+                    server.login(os.getenv("BREVO_LOGIN"), sender_password)
                     for student in students:
                         recipient_email = student['student_email']
                         if recipient_email:
@@ -919,88 +922,239 @@ def upload_students():
 @app.route('/upload_questions', methods=['GET', 'POST'])
 @admin_login_required
 def upload_questions():
+
     conn = mysql.connector.connect(**MYSQL_CONFIG)
     c = conn.cursor(dictionary=True)
-    
-    # Fetch subjects for initial dropdown (unfiltered or filtered by GET params)
+
     program = request.args.get('program', '')
     year = request.args.get('year', '')
+
     query = 'SELECT subject_name, subject_code FROM subjects'
     params = []
+
     if program:
         query += ' WHERE program = %s'
         params.append(program)
+
     if year:
         query += ' AND year = %s' if 'WHERE' in query else ' WHERE year = %s'
         params.append(year)
+
     c.execute(query, params)
     subjects = c.fetchall()
-    
-    # Fetch existing questions (optional, for display if needed)
+
     c.execute('SELECT program, year, subject, subject_code, co, question, option1, option2, option3, option4, answer FROM questions')
     questions = c.fetchall()
-    
+
     if request.method == 'POST':
+
         selected_program = request.form['program']
         selected_year = request.form['year']
         selected_subject = request.form['subject']
         selected_subject_code = request.form['subject_code']
         file = request.files['file']
-        
+
         if not file or not selected_program or not selected_year or not selected_subject or not selected_subject_code:
             flash('All fields are required!', 'error')
-            return redirect(url_for('upload_questions', program=selected_program, year=selected_year))
-        
+            return redirect(url_for('upload_questions',
+                                    program=selected_program,
+                                    year=selected_year))
+
         if file.filename.endswith('.xlsx'):
+
             df = pd.read_excel(file)
-            # Convert all column names to lowercase for case-insensitive checking
-            df.columns = [col.lower() for col in df.columns]
+
+            # 🔥 Clean headers
+            df.columns = (
+                df.columns
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .str.replace(" ", "")
+                .str.replace("_", "")
+                .str.replace("-", "")
+            )
+
+            # 🔥 Header mapping
+            column_mapping = {
+
+            # 🔹 CO variations
+            'co': 'co',
+            'c.o': 'co',
+            'c_o': 'co',
+            'courseoutcome': 'co',
+            'course_outcome': 'co',
+            'co_no': 'co',
+            'cono': 'co',
+            'co number': 'co',
+            'conumber': 'co',
+
+            # 🔹 Question variations
+            'question': 'question',
+            'questions': 'question',
+            'questiontext': 'question',
+            'question_text': 'question',
+            'ques': 'question',
+            'q': 'question',
+            'questionno': 'question',
+            'question number': 'question',
+
+            # 🔹 Option A variations
+            'a': 'a',
+            'optiona': 'a',
+            'option_a': 'a',
+            'option 1': 'a',
+            'option1': 'a',
+            'choicea': 'a',
+            'choice1': 'a',
+            'answera': 'a',
+            'a)': 'a',
+
+            # 🔹 Option B variations
+            'b': 'b',
+            'optionb': 'b',
+            'option_b': 'b',
+            'option2': 'b',
+            'option 2': 'b',
+            'choiceb': 'b',
+            'choice2': 'b',
+            'answerb': 'b',
+            'b)': 'b',
+
+            # 🔹 Option C variations
+            'c': 'c',
+            'optionc': 'c',
+            'option_c': 'c',
+            'option3': 'c',
+            'option 3': 'c',
+            'choicec': 'c',
+            'choice3': 'c',
+            'answerc': 'c',
+            'c)': 'c',
+
+            # 🔹 Option D variations
+            'd': 'd',
+            'optiond': 'd',
+            'option_d': 'd',
+            'option4': 'd',
+            'option 4': 'd',
+            'choiced': 'd',
+            'choice4': 'd',
+            'answerd': 'd',
+            'd)': 'd',
+
+            # 🔹 Answer variations
+            'answer': 'answer',
+            'correctanswer': 'answer',
+            'correct_answer': 'answer',
+            'rightanswer': 'answer',
+            'right_answer': 'answer',
+            'correctoption': 'answer',
+            'correct option': 'answer',
+            'ans': 'answer',
+            'key': 'answer'
+        }
+
+
+            df.columns = [column_mapping.get(col, col) for col in df.columns]
+
             expected_columns = ['co', 'question', 'a', 'b', 'c', 'd', 'answer']
+
             if not all(col in df.columns for col in expected_columns):
-                flash('Excel file must have columns: co, question, a, b, c, d, answer ', 'error',('case insensitive'))
-                return redirect(url_for('upload_questions', program=selected_program, year=selected_year))
-            
+                flash('Excel must contain: co, question, a, b, c, d, answer', 'error')
+                return redirect(url_for('upload_questions',
+                                        program=selected_program,
+                                        year=selected_year))
+
+            df = df.dropna(how='all')
+
             for index, row in df.iterrows():
-                co = str(int(row['co'])) if pd.notna(row['co']) else ''
-                question = row['question'] if pd.notna(row['question']) else ''
-                option1 = row['a'] if pd.notna(row['a']) else ''
-                option2 = row['b'] if pd.notna(row['b']) else ''
-                option3 = row['c'] if pd.notna(row['c']) else ''
-                option4 = row['d'] if pd.notna(row['d']) else ''
-                answer = str(row['answer']).lower() if pd.notna(row['answer']) else ''
-                
-                valid_answers = {'a', 'b', 'c', 'd'}
-                if answer not in valid_answers:
-                    flash(f'Invalid answer value "{answer}" in row {index + 2}. Answer must be a, b, c, or d.', 'error')
-                    return redirect(url_for('upload_questions', program=selected_program, year=selected_year))
-                
-                options = {'a': option1, 'b': option2, 'c': option3, 'd': option4}
-                if not options[answer]:
-                    flash(f'Answer option {answer} in row {index + 2} is empty. Please provide a valid option.', 'error')
-                    return redirect(url_for('upload_questions', program=selected_program, year=selected_year))
-                
-                answer_text = options[answer]
-                
-                c.execute('''INSERT INTO questions 
-                    (program, year, subject, subject_code, co, question, option1, option2, option3, option4, answer) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
-                    (selected_program, selected_year, selected_subject, selected_subject_code,
-                     co, question, option1, option2, option3, option4, answer_text))
-            
+
+                co = str(int(row['co'])).strip() if pd.notna(row['co']) else ''
+                question = str(row['question']).strip() if pd.notna(row['question']) else ''
+                option1 = str(row['a']).strip() if pd.notna(row['a']) else ''
+                option2 = str(row['b']).strip() if pd.notna(row['b']) else ''
+                option3 = str(row['c']).strip() if pd.notna(row['c']) else ''
+                option4 = str(row['d']).strip() if pd.notna(row['d']) else ''
+                answer_raw = str(row['answer']).strip().lower() if pd.notna(row['answer']) else ''
+
+                if not question:
+                    continue
+
+                options = {
+                    'a': option1,
+                    'b': option2,
+                    'c': option3,
+                    'd': option4
+                }
+
+                correct_letter = None
+                valid_letters = {'a', 'b', 'c', 'd'}
+
+                # Case 1: direct letter
+                if answer_raw in valid_letters:
+                    correct_letter = answer_raw
+
+                # Case 2: option a
+                elif answer_raw.replace(" ", "") in ['optiona', 'optionb', 'optionc', 'optiond']:
+                    correct_letter = answer_raw.strip()[-1]
+
+                # Case 3: number (1–4)
+                elif answer_raw in ['1', '2', '3', '4']:
+                    correct_letter = ['a', 'b', 'c', 'd'][int(answer_raw) - 1]
+
+                # Case 4: text match
+                else:
+                    for letter, text in options.items():
+                        if text and text.lower() in answer_raw:
+                            correct_letter = letter
+                            break
+
+                if not correct_letter:
+                    flash(f'Invalid answer "{answer_raw}" in row {index + 2}.', 'error')
+                    return redirect(url_for('upload_questions',
+                                            program=selected_program,
+                                            year=selected_year))
+
+                answer_text = options[correct_letter]
+
+                c.execute('''
+                    INSERT INTO questions
+                    (program, year, subject, subject_code,
+                     co, question, option1, option2, option3, option4, answer)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    selected_program,
+                    selected_year,
+                    selected_subject,
+                    selected_subject_code,
+                    co,
+                    question,
+                    option1,
+                    option2,
+                    option3,
+                    option4,
+                    answer_text
+                ))
+
             conn.commit()
             flash('Questions uploaded successfully!', 'success')
-            return redirect(url_for('upload_questions', program=selected_program, year=selected_year))
+            return redirect(url_for('upload_questions',
+                                    program=selected_program,
+                                    year=selected_year))
+
         else:
             flash('Please upload a valid .xlsx file!', 'error')
-    
+
     conn.close()
-    return render_template(
-        'upload_questions.html',
-        subjects=subjects,
-        questions=questions,
-        program=program,
-        year=year
-    )
+
+    return render_template('upload_questions.html',
+                           subjects=subjects,
+                           questions=questions,
+                           program=program,
+                           year=year)
+
+
 
 @app.route('/set_entry_code', methods=['GET', 'POST'])
 @admin_login_required
@@ -1253,8 +1407,8 @@ def view_results():
         with open(file_path, 'wb') as f:
             f.write(buffer.getvalue())
         # Send PDF to staff email
-        sender_email = "deptcs.aam@gmail.com"
-        sender_password = "vyahaexrckifhirn"  # Use an App Password and secure it
+        sender_email = os.getenv("SENDER_EMAIL")
+        sender_password = os.getenv("BREVO_SMTP_KEY")
         if subject_code != "N/A":
             c.execute('SELECT email FROM staff WHERE subject_code = %s', (subject_code,))
             staff = c.fetchone()
@@ -1267,10 +1421,9 @@ def view_results():
                     msg['From'] = sender_email
                     msg['To'] = staff['email']
                     msg.attach(attachment)
-                    with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                    with smtplib.SMTP(os.getenv("BREVO_HOST"), int(os.getenv("BREVO_PORT"))) as server:
                         server.starttls()
-                        server.login(sender_email, sender_password)
-                        server.sendmail(sender_email, staff['email'], msg.as_string())
+                        server.login(os.getenv("BREVO_LOGIN"), sender_password)
                 flash(f"PDF sent to staff email: {staff['email']}", 'success')
             else:
                 flash(f"No staff email found for subject {subject_code}.", 'warning')
@@ -1369,7 +1522,15 @@ def quiz_login():
             year = student['year']
             quiz_status = student['quiz_status']
 
-            if quiz_status != 'not_attempted':
+            c.execute('''
+                UPDATE students 
+                SET quiz_status = %s 
+                WHERE roll_no = %s AND quiz_status = %s
+            ''', ('attempted', roll_no, 'not_attempted'))
+
+            conn.commit()
+
+            if c.rowcount == 0:
                 flash('You have already attempted the quiz!', 'error')
                 conn.close()
                 return render_template('quiz_login.html')
