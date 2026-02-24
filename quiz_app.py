@@ -4,12 +4,10 @@ import pandas as pd
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
-import os
 import xlsxwriter
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import io
 from reportlab.pdfgen import canvas
 from datetime import datetime, timedelta
 from reportlab.lib import colors
@@ -20,36 +18,51 @@ import pandas as pd
 import io
 from email.mime.application import MIMEApplication
 from dotenv import load_dotenv
+import os
+from werkzeug.utils import secure_filename
+
+app = Flask(__name__)   
+
+
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 load_dotenv()
 
 
-app = Flask(__name__)
-app.secret_key = 'your-secret-key'  # Replace with secure key in production
+app.secret_key = 'your-secret-key'
 
-# MySQL Configuration
+
 MYSQL_CONFIG = {
     'host': 'localhost',
-    'user': 'root',  # Replace with your MySQL username
-    'password': 'aswin2772',  # Replace with your MySQL password
-    'database': 'quiz_db', # Use pure Python implementation for compatibility
+    'user': 'root', 
+    'password': '',  
+    'database': 'quiz_db', 
 }
 
-# Function to get MySQL connection
+
 def get_db_connection():
     try:
         conn = mysql.connector.connect(**MYSQL_CONFIG)
-        conn.autocommit = False  # Enable manual commit for transactions
+        conn.autocommit = False 
         return conn
     except mysql.connector.Error as err:
         print(f"Error connecting to MySQL: {err}")
         raise
 
-# Database initialization
+
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
 
-    # Enable foreign key support
     c.execute("SET FOREIGN_KEY_CHECKS = 1")
 
     # 1. students table
@@ -135,19 +148,17 @@ def init_db():
         FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
     )''')
 
-    # Insert default admin
     default_admin = 'admin'
-    default_password = generate_password_hash('admin@123#')  # Change in production
+    default_password = generate_password_hash('admin@123#') 
     c.execute('INSERT IGNORE INTO admins (username, password) VALUES (%s, %s)',
               (default_admin, default_password))
 
     conn.commit()
     conn.close()
 
-# Initialize database
+
 init_db()
 
-# Admin login required decorator
 def admin_login_required(f):
     def wrap(*args, **kwargs):
         if 'admin' not in session:
@@ -156,9 +167,9 @@ def admin_login_required(f):
         return f(*args, **kwargs)
     wrap.__name__ = f.__name__
     return wrap
-# @app.route('/')
-# def index():
-#     return render_template('admin_login.html')
+@app.route('/')
+def index():
+     return render_template('admin_login.html')
 
 @app.route('/admin_login', methods=['GET', 'POST'])
 def admin_login():
@@ -524,45 +535,89 @@ def delete_selected_questions():
         conn.close()
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/update_question/<int:question_id>', methods=['POST'])
+@app.route('/update_question/<int:question_id>', methods=['GET', 'POST'])
 @admin_login_required
 def update_question(question_id):
-    subject_filter = request.args.get('subject', '')  # Preserve subject filter
-    program = request.form['program']
-    year = request.form['year']
-    subject = request.form['subject']
-    subject_code = request.form['subject_code']
-    co = request.form['co']
-    question = request.form['question']
-    option1 = request.form['option1']
-    option2 = request.form['option2']
-    option3 = request.form['option3']
-    option4 = request.form['option4']
-    answer = request.form['answer']
 
     conn = get_db_connection()
-    c = conn.cursor()
+    c = conn.cursor(dictionary=True)
 
-    update_query = """
-        UPDATE questions
-        SET program=%s, year=%s, subject=%s, subject_code=%s, co=%s,
-            question=%s, option1=%s, option2=%s, option3=%s, option4=%s, answer=%s
-        WHERE id=%s
-    """
-    values = (program, year, subject, subject_code, co, question,
-              option1, option2, option3, option4, answer, question_id)
+    if request.method == 'POST':
 
-    try:
+        question_text = request.form['question']
+        option1 = request.form['option1']
+        option2 = request.form['option2']
+        option3 = request.form['option3']
+        option4 = request.form['option4']
+        answer = request.form['answer']
+
+        image = request.files.get('image')
+
+        if 'remove_image' in request.form:
+
+            update_query = """
+                UPDATE questions
+                SET question=%s,
+                    option1=%s,
+                    option2=%s,
+                    option3=%s,
+                    option4=%s,
+                    answer=%s,
+                    image_path=NULL
+                WHERE id=%s
+            """
+            values = (question_text, option1, option2, option3, option4, answer, question_id)
+
+        elif image and image.filename != '' and allowed_file(image.filename):
+
+            filename = secure_filename(image.filename)
+            image.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
+            update_query = """
+                UPDATE questions
+                SET question=%s,
+                    option1=%s,
+                    option2=%s,
+                    option3=%s,
+                    option4=%s,
+                    answer=%s,
+                    image_path=%s
+                WHERE id=%s
+            """
+            values = (question_text, option1, option2, option3, option4, answer, filename, question_id)
+
+        else:
+
+            update_query = """
+                UPDATE questions
+                SET question=%s,
+                    option1=%s,
+                    option2=%s,
+                    option3=%s,
+                    option4=%s,
+                    answer=%s
+                WHERE id=%s
+            """
+            values = (question_text, option1, option2, option3, option4, answer, question_id)
+
         c.execute(update_query, values)
         conn.commit()
         flash("Question updated successfully!", "success")
-    except mysql.connector.Error as e:
-        conn.rollback()
-        flash(f"Error updating question: {str(e)}", "error")
-    
+        conn.close()
+        return redirect(url_for('show_questions'))
+
+    # GET method
+    c.execute("SELECT * FROM questions WHERE id=%s", (question_id,))
+    question = c.fetchone()
+
+    c.execute("SELECT * FROM subjects")
+    subjects = c.fetchall()
+
     conn.close()
 
-    return redirect(url_for('show_questions', subject=subject_filter))
+    return render_template('update_questions.html',
+                           question=question,
+                           subjects=subjects)
 
 @app.route('/delete_question/<int:question_id>')
 @admin_login_required
