@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
-<div class="flex h-screen">
+<div class="flex h-screen overflow-hidden">
     <!-- Sidebar -->
     <div class="w-64 bg-gray-800 text-white p-4">
         <h2 class="text-2xl font-bold mb-6">Admin Dashboard</h2>
@@ -36,7 +36,7 @@
     </div>
 
     <!-- Main Content -->
-    <div class="flex-1 p-8">
+   <div class="flex-1 p-8 overflow-y-auto">
         <h1 class="text-3xl font-bold mb-6">Update Question</h1>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -48,55 +48,104 @@
                 {% endfor %}
             {% endif %}
         {% endwith %}
+        {% if not question['image_path'] %}
+            <script>
+                document.querySelector('input[name="remove_image"]').disabled = true;
+            </script>
+        {% endif %}
 
-        <form method="POST" class="max-w-lg">
+        <form method="POST" enctype="multipart/form-data">
+
+            <!-- Question -->
             <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">Question Text</label>
-                <textarea name="question_text" rows="3" class="mt-1 block w-full p-2 border rounded" required>{{ question['question_text'] }}</textarea>
+                <label class="block text-sm font-medium text-gray-700">
+                    Question Text
+                </label>
+                <textarea name="question" rows="3"
+                    class="mt-1 block w-full p-2 border rounded"
+                    required>{{ question['question'] }}</textarea>
+            </div>
+
+            <!-- Options -->
+            <div class="mb-4">
+                <label>Option 1</label>
+                <input type="text" name="option1"
+                    value="{{ question['option1'] }}"
+                    class="mt-1 block w-full p-2 border rounded" required>
             </div>
 
             <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">Option A</label>
-                <input type="text" name="option_a" value="{{ question['option_a'] }}" class="mt-1 block w-full p-2 border rounded" required>
+                <label>Option 2</label>
+                <input type="text" name="option2"
+                    value="{{ question['option2'] }}"
+                    class="mt-1 block w-full p-2 border rounded" required>
             </div>
 
             <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">Option B</label>
-                <input type="text" name="option_b" value="{{ question['option_b'] }}" class="mt-1 block w-full p-2 border rounded" required>
+                <label>Option 3</label>
+                <input type="text" name="option3"
+                    value="{{ question['option3'] }}"
+                    class="mt-1 block w-full p-2 border rounded" required>
             </div>
 
             <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">Option C</label>
-                <input type="text" name="option_c" value="{{ question['option_c'] }}" class="mt-1 block w-full p-2 border rounded" required>
+                <label>Option 4</label>
+                <input type="text" name="option4"
+                    value="{{ question['option4'] }}"
+                    class="mt-1 block w-full p-2 border rounded" required>
             </div>
 
+            <!-- Correct Answer -->
             <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">Option D</label>
-                <input type="text" name="option_d" value="{{ question['option_d'] }}" class="mt-1 block w-full p-2 border rounded" required>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">Correct Option</label>
-                <select name="correct_option" class="mt-1 block w-full p-2 border rounded" required>
-                    <option value="A" {% if question['correct_option'] == 'A' %}selected{% endif %}>A</option>
-                    <option value="B" {% if question['correct_option'] == 'B' %}selected{% endif %}>B</option>
-                    <option value="C" {% if question['correct_option'] == 'C' %}selected{% endif %}>C</option>
-                    <option value="D" {% if question['correct_option'] == 'D' %}selected{% endif %}>D</option>
+                <label>Correct Answer</label>
+                <select name="answer"
+                    class="mt-1 block w-full p-2 border rounded" required>
+                    <option value="option1" {% if question['answer']=='option1' %}selected{% endif %}>Option 1</option>
+                    <option value="option2" {% if question['answer']=='option2' %}selected{% endif %}>Option 2</option>
+                    <option value="option3" {% if question['answer']=='option3' %}selected{% endif %}>Option 3</option>
+                    <option value="option4" {% if question['answer']=='option4' %}selected{% endif %}>Option 4</option>
                 </select>
             </div>
-
+            <!-- Image Upload -->
             <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">Subject</label>
-                <select name="subject_id" class="mt-1 block w-full p-2 border rounded" required>
-                    {% for subject in subjects %}
-                        <option value="{{ subject['id'] }}" {% if subject['id'] == question['subject_id'] %}selected{% endif %}>
-                            {{ subject['name'] }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
+                <label class="block text-sm font-medium text-gray-700">
+                    Upload Image (Optional)
+                </label>
 
-            <button type="submit" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Update Question</button>
+                {% if question['image_path'] %}
+                    <p class="text-sm text-gray-600 mb-1">Current Image:</p>
+                    <img src="{{ url_for('static', filename='uploads/' + question['image_path']) }}"
+                        class="w-40 mb-2 rounded border">
+                {% endif %}
+
+                <input type="file"
+                    name="image"
+                    accept="image/*"
+                    class="mt-1 block w-full p-2 border rounded">
+            </div>
+            <div class="flex items-center space-x-3">
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="remove_image" class="sr-only peer">
+                    <div class="w-11 h-6 bg-gray-200 rounded-full peer 
+                                peer-checked:bg-red-500 
+                                after:content-[''] after:absolute after:top-[2px] 
+                                after:left-[2px] after:bg-white after:border 
+                                after:rounded-full after:h-5 after:w-5 
+                                after:transition-all peer-checked:after:translate-x-full">
+                    </div>
+                </label>
+                <span class="text-sm text-gray-700">
+                    Disable Image (Remove Image)
+                </span>
+            </div>
+            <br>
+
+            <!-- Submit -->
+            <button type="submit"
+                class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
+                Update Question
+            </button>
+
         </form>
     </div>
 </div>
